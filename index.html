@@ -6,6 +6,20 @@
   <meta name="theme-color" content="#111827">
   <title>TDnetレーダー</title>
   <link rel="manifest" href="manifest.json">
+
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: "b7c4e99b-5677-452f-b6f5-f29d5d30d45f",
+        serviceWorkerPath: "tdnet-radar/OneSignalSDKWorker.js",
+        serviceWorkerParam: { scope: "/tdnet-radar/push/" },
+        autoResubscribe: true
+      });
+    });
+  </script>
+
   <style>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
@@ -82,13 +96,13 @@
   <main class="wrap">
     <section class="hero">
       <h1>TDnetレーダー</h1>
-      <div class="sub">まずは「スマホアプリっぽい形」を体験する試作版</div>
+      <div class="sub">TDnet新着を監視して重要開示を通知</div>
     </section>
 
     <section class="status">
       <div>
         <strong>監視機能</strong><br>
-        <span style="font-size:13px;color:#6b7280">TDnet接続はまだしていません</span>
+        <span style="font-size:13px;color:#6b7280">TDnet監視サーバー準備済み・Push設定中</span>
       </div>
       <span class="badge">試作版</span>
     </section>
@@ -96,15 +110,16 @@
     <section class="card" id="settings"></section>
 
     <section class="card" style="padding:14px">
-      <strong>通知テスト</strong>
-      <p class="note">このボタンは、スマホの通知許可と通知表示だけを確認します。TDnetの新着監視はまだ行いません。</p>
-      <button id="notifyBtn">テスト通知を出す</button>
+      <strong>通知設定</strong>
+      <p class="note">「本物のプッシュ通知を有効にする」を押すと、AndroidのChromeから通知許可を求められます。</p>
+      <button id="pushBtn">本物のプッシュ通知を有効にする</button>
+      <button class="secondary" id="notifyBtn">端末内テスト通知を出す</button>
       <button class="secondary" id="sampleBtn">サンプル新着を表示</button>
       <div id="log">まだ通知はありません。</div>
     </section>
 
     <p class="note">
-      設定はこの端末の中だけに保存されます。AI、OpenAI API、ChatGPT Work、Codexは使いません。
+      AI、OpenAI API、ChatGPT Work、Codexは使用しません。
     </p>
   </main>
 
@@ -138,6 +153,30 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(console.error);
 }
 
+document.getElementById("pushBtn").addEventListener("click", async () => {
+  const log = document.getElementById("log");
+
+  try {
+    OneSignalDeferred.push(async function(OneSignal) {
+      if (!OneSignal.Notifications.isPushSupported()) {
+        log.textContent = "このブラウザはWeb Pushに対応していません。";
+        return;
+      }
+
+      await OneSignal.Notifications.requestPermission();
+
+      if (OneSignal.Notifications.permission) {
+        log.textContent = "本物のプッシュ通知を受け取れる状態になりました。";
+      } else {
+        log.textContent = "通知が許可されませんでした。Android / Chromeの通知設定を確認してください。";
+      }
+    });
+  } catch (e) {
+    console.error(e);
+    log.textContent = "Push設定中にエラーが発生しました。";
+  }
+});
+
 document.getElementById("notifyBtn").addEventListener("click", async () => {
   const log = document.getElementById("log");
 
@@ -158,12 +197,12 @@ document.getElementById("notifyBtn").addEventListener("click", async () => {
 
   const reg = await navigator.serviceWorker.ready;
   await reg.showNotification("TDnetレーダー", {
-    body: "通知テスト成功。ここに『○○社 上方修正』のような通知が出ます。",
+    body: "端末内テスト通知成功。",
     icon: "icon-192.png",
     badge: "icon-192.png",
     tag: "tdnet-test"
   });
-  log.textContent = "テスト通知を送りました。";
+  log.textContent = "端末内テスト通知を送りました。";
 });
 
 document.getElementById("sampleBtn").addEventListener("click", () => {
