@@ -1,7 +1,8 @@
-const CACHE = "tdnet-radar-v2";
+const CACHE = "tdnet-radar-v3";
 const ASSETS = [
   "./",
   "./index.html",
+  "./detail.html",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png"
@@ -42,6 +43,9 @@ self.addEventListener("notificationclick", event => {
   event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+      if (list.length && event.notification?.data?.url) {
+        return list[0].navigate(event.notification.data.url).then(client => client.focus());
+      }
       if (list.length) return list[0].focus();
       return clients.openWindow("./");
     })

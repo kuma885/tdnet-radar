@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>TDnetレーダー - 開示詳細</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+      line-height: 1.65;
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 14px 12px 36px;
+    }
+    .top {
+      background: #111827;
+      color: white;
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 12px;
+    }
+    .brand { font-size: 14px; opacity: .75; }
+    h1 {
+      margin: 5px 0 0;
+      font-size: 25px;
+      line-height: 1.35;
+    }
+    .meta {
+      margin-top: 9px;
+      font-size: 14px;
+      opacity: .8;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 17px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .category {
+      display: inline-block;
+      padding: 5px 10px;
+      margin: 0 6px 6px 0;
+      border-radius: 999px;
+      background: #e5e7eb;
+      font-weight: 800;
+      font-size: 14px;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+    .headline {
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+    .summary {
+      font-size: 18px;
+      line-height: 1.75;
+      margin: 0;
+    }
+    ul {
+      padding-left: 1.35em;
+      margin: 8px 0 0;
+    }
+    li {
+      margin: 7px 0;
+      font-size: 17px;
+    }
+    .caution {
+      border-left: 5px solid #9ca3af;
+      padding-left: 12px;
+      font-size: 15px;
+    }
+    .title-original {
+      font-size: 16px;
+      word-break: break-word;
+    }
+    .button {
+      display: block;
+      width: 100%;
+      text-align: center;
+      text-decoration: none;
+      border: 0;
+      border-radius: 14px;
+      padding: 15px 12px;
+      font-size: 17px;
+      font-weight: 850;
+      margin-top: 10px;
+      background: #2563eb;
+      color: white;
+    }
+    .button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+    .note {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 10px;
+    }
+    .error {
+      background: #fff;
+      border-radius: 16px;
+      padding: 18px;
+      font-size: 17px;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #030712; color: #f9fafb; }
+      .card, .error { background: #111827; }
+      .category, .button.secondary {
+        background: #374151;
+        color: #f9fafb;
+      }
+      .note { color: #9ca3af; }
+    }
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <section class="top">
+    <div class="brand">TDnetレーダー</div>
+    <h1 id="company">開示情報を読み込み中...</h1>
+    <div class="meta" id="meta"></div>
+  </section>
+
+  <div id="content">
+    <section class="card">
+      読み込み中...
+    </section>
+  </div>
+</main>
+
+<script>
+const WORKER_API = "https://tdnet-monitor.sanndora388.workers.dev/api/detail";
+const params = new URLSearchParams(location.search);
+const id = params.get("id");
+const date = params.get("date") || "";
+
+function esc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function tdnetFallbackUrl(date) {
+  if (!/^\d{8}$/.test(date)) {
+    return "https://www.release.tdnet.info/inbs/I_main_00.html";
+  }
+  return `https://www.release.tdnet.info/inbs/I_list_001_${date}.html`;
+}
+
+async function loadDetail() {
+  const content = document.getElementById("content");
+
+  if (!id) {
+    content.innerHTML = `
+      <div class="error">
+        開示IDがありません。
+        <a class="button secondary" href="./">TDnetレーダーへ戻る</a>
+      </div>`;
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${WORKER_API}?id=${encodeURIComponent(id)}`,
+      { cache: "no-store" }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const exp = data.explanation || {};
+    const categories = Array.isArray(data.categories) ? data.categories : [];
+    const points = Array.isArray(exp.points) ? exp.points : [];
+    const originalUrl = data.originalUrl || tdnetFallbackUrl(data.date || date);
+
+    document.getElementById("company").textContent =
+      `${data.company || ""}（${data.code || ""}）`;
+
+    document.getElementById("meta").textContent =
+      `${data.date || ""} ${data.time || ""}`;
+
+    content.innerHTML = `
+      <section class="card">
+        ${categories.map(c => `<span class="category">${esc(c)}</span>`).join("")}
+        <div class="headline">${esc(exp.headline || "重要開示を検出しました")}</div>
+        <p class="summary">${esc(exp.summary || "")}</p>
+      </section>
+
+      <section class="card">
+        <h2>ここを見る</h2>
+        <ul>
+          ${points.map(p => `<li>${esc(p)}</li>`).join("")}
+        </ul>
+      </section>
+
+      ${exp.caution ? `
+      <section class="card">
+        <h2>注意</h2>
+        <div class="caution">${esc(exp.caution)}</div>
+      </section>` : ""}
+
+      <section class="card">
+        <h2>TDnetのタイトル</h2>
+        <div class="title-original">${esc(data.title || "")}</div>
+
+        <a class="button" href="${esc(originalUrl)}" target="_blank" rel="noopener">
+          TDnet原文を開く
+        </a>
+        <a class="button secondary" href="./">
+          TDnetレーダーへ戻る
+        </a>
+
+        <div class="note">
+          この説明はAIや有料APIを使わず、TDnetのタイトルをルールで読み替えたものです。
+          数字や契約条件など最終確認は原文を見てください。
+        </div>
+      </section>
+    `;
+  } catch (error) {
+    const fallback = tdnetFallbackUrl(date);
+
+    document.getElementById("company").textContent = "開示情報を表示できませんでした";
+    document.getElementById("meta").textContent = "";
+
+    content.innerHTML = `
+      <div class="error">
+        要約データを取得できませんでした。保存期間切れや一時的な通信エラーの可能性があります。
+        <a class="button" href="${esc(fallback)}" target="_blank" rel="noopener">
+          TDnet一覧を開く
+        </a>
+        <a class="button secondary" href="./">
+          TDnetレーダーへ戻る
+        </a>
+      </div>`;
+  }
+}
+
+loadDetail();
+</script>
+</body>
+</html>
