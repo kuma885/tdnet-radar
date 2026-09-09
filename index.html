@@ -104,9 +104,10 @@
         <strong>監視機能</strong><br>
         <span style="font-size:13px;color:#6b7280">TDnetを2分ごとに監視中</span>
       </div>
-      <span class="badge">v2</span>
+      <span class="badge">v2.1</span>
     </section>
 
+    <section class="card" style="padding:14px"><strong>通知から開示を開く</strong><p class="note">通知機能の更新後は、通知本体をタップすると原文へ移動します。「かんたん説明」ボタンではタイトルの意味を確認できます。ボタンは通知を広げると表示される場合があります。</p></section>
     <section class="card" style="padding:14px 14px 6px"><strong>監視対象</strong><p class="note">下のスイッチは端末内の表示設定です。現在の自動通知条件そのものはCloudflare側で管理しています。</p></section><section class="card" id="settings"></section>
 
     <section class="card" style="padding:14px">
@@ -200,7 +201,8 @@ document.getElementById("notifyBtn").addEventListener("click", async () => {
     body: "端末内テスト通知成功。",
     icon: "icon-192.png",
     badge: "icon-192.png",
-    tag: "tdnet-test"
+    tag: "tdnet-test",
+    data: { url: new URL("./", location.href).href }
   });
   log.textContent = "端末内テスト通知を送りました。";
 });

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#111827">
   <title>TDnetレーダー - 開示詳細</title>
   <style>
@@ -133,7 +134,11 @@
     <div class="meta" id="meta"></div>
   </section>
 
-  <div id="content">
+  <section class="card" id="original-actions" hidden>
+    <a class="button" id="original-link" target="_blank" rel="noopener noreferrer"></a>
+    <div class="note">説明を待たずに開けます。</div>
+  </section>
+  <div id="content" aria-live="polite">
     <section class="card">
       読み込み中...
     </section>
@@ -145,113 +150,82 @@ const WORKER_API = "https://tdnet-monitor.sanndora388.workers.dev/api/detail";
 const params = new URLSearchParams(location.search);
 const id = params.get("id");
 const date = params.get("date") || "";
-
 function esc(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
-
+function safeTdnetUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.hostname !== "www.release.tdnet.info" ||
+        url.username || url.password || url.port || !url.pathname.startsWith("/inbs/")) return "";
+    return url.href;
+  } catch { return ""; }
+}
 function tdnetFallbackUrl(date) {
-  if (!/^\d{8}$/.test(date)) {
-    return "https://www.release.tdnet.info/inbs/I_main_00.html";
-  }
-  return `https://www.release.tdnet.info/inbs/I_list_001_${date}.html`;
+  return /^\d{8}$/.test(date)
+    ? `https://www.release.tdnet.info/inbs/I_list_001_${date}.html`
+    : "https://www.release.tdnet.info/inbs/I_main_00.html";
 }
-
+const notificationOriginal = safeTdnetUrl(params.get("original"));
+function showOriginal(url) {
+  const link = document.getElementById("original-link");
+  link.href = url;
+  link.textContent = /\.pdf$/i.test(new URL(url).pathname) ? "TDnet原文を開く" : "TDnetの開示ページ・一覧を開く";
+  document.getElementById("original-actions").hidden = false;
+}
+function renderExplanation(exp) {
+  const points = Array.isArray(exp.points) ? exp.points : [];
+  return `<section class="card">
+    ${exp.category ? `<span class="category">${esc(exp.category)}</span>` : ""}
+    <h2>${esc(exp.headline || "開示の説明")}</h2>
+    <p class="summary">${esc(exp.summary || "")}</p>
+    ${points.length ? `<h3>ここを見る</h3><ul>${points.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
+    ${exp.caution ? `<p class="caution">${esc(exp.caution)}</p>` : ""}
+  </section>`;
+}
 async function loadDetail() {
   const content = document.getElementById("content");
-
-  if (!id) {
-    content.innerHTML = `
-      <div class="error">
-        開示IDがありません。
-        <a class="button secondary" href="./">TDnetレーダーへ戻る</a>
-      </div>`;
+  showOriginal(notificationOriginal || tdnetFallbackUrl(date));
+  if (!id || !/^[a-f0-9]{24}$/.test(id)) {
+    document.getElementById("company").textContent = "開示を特定できませんでした";
+    content.innerHTML = `<div class="error">開示IDがありません、または正しくありません。
+      <a class="button secondary" href="./">TDnetレーダーへ戻る</a></div>`;
     return;
   }
-
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(
-      `${WORKER_API}?id=${encodeURIComponent(id)}`,
-      { cache: "no-store" }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
+    const response = await fetch(`${WORKER_API}?id=${encodeURIComponent(id)}`, {
+      cache: "no-store", signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    const exp = data.explanation || {};
+    if (!data || data.id !== id) throw new Error("異なる開示データ");
+    const exps = Array.isArray(data.explanations) && data.explanations.length
+      ? data.explanations : [data.explanation || {}];
     const categories = Array.isArray(data.categories) ? data.categories : [];
-    const points = Array.isArray(exp.points) ? exp.points : [];
-    const originalUrl = data.originalUrl || tdnetFallbackUrl(data.date || date);
-
-    document.getElementById("company").textContent =
-      `${data.company || ""}（${data.code || ""}）`;
-
-    document.getElementById("meta").textContent =
-      `${data.date || ""} ${data.time || ""}`;
-
-    content.innerHTML = `
-      <section class="card">
-        ${categories.map(c => `<span class="category">${esc(c)}</span>`).join("")}
-        <div class="headline">${esc(exp.headline || "重要開示を検出しました")}</div>
-        <p class="summary">${esc(exp.summary || "")}</p>
-      </section>
-
-      <section class="card">
-        <h2>ここを見る</h2>
-        <ul>
-          ${points.map(p => `<li>${esc(p)}</li>`).join("")}
-        </ul>
-      </section>
-
-      ${exp.caution ? `
-      <section class="card">
-        <h2>注意</h2>
-        <div class="caution">${esc(exp.caution)}</div>
-      </section>` : ""}
-
-      <section class="card">
-        <h2>TDnetのタイトル</h2>
-        <div class="title-original">${esc(data.title || "")}</div>
-
-        <a class="button" href="${esc(originalUrl)}" target="_blank" rel="noopener">
-          TDnet原文を開く
-        </a>
-        <a class="button secondary" href="./">
-          TDnetレーダーへ戻る
-        </a>
-
-        <div class="note">
-          この説明はAIや有料APIを使わず、TDnetのタイトルをルールで読み替えたものです。
-          数字や契約条件など最終確認は原文を見てください。
-        </div>
-      </section>
-    `;
+    showOriginal(safeTdnetUrl(data.originalUrl) || notificationOriginal || tdnetFallbackUrl(data.date || date));
+    document.getElementById("company").textContent = `${data.company || ""}（${data.code || ""}）`;
+    document.getElementById("meta").textContent = `${data.date || ""} ${data.time || ""}`;
+    content.innerHTML = `<section class="card">
+      <h2>かんたん説明</h2>
+      ${categories.map(c => `<span class="category">${esc(c)}</span>`).join("")}
+      <p class="note">タイトルからの説明です。PDF本文の要約ではありません。金額や契約条件は原文で確認してください。</p>
+    </section>${exps.map(renderExplanation).join("")}
+    <section class="card"><h2>TDnetのタイトル</h2>
+      <div class="title-original">${esc(data.title || "")}</div>
+      <a class="button secondary" href="./">TDnetレーダーへ戻る</a>
+    </section>`;
   } catch (error) {
-    const fallback = tdnetFallbackUrl(date);
-
-    document.getElementById("company").textContent = "開示情報を表示できませんでした";
+    document.getElementById("company").textContent = "説明を取得できませんでした";
     document.getElementById("meta").textContent = "";
-
-    content.innerHTML = `
-      <div class="error">
-        要約データを取得できませんでした。保存期間切れや一時的な通信エラーの可能性があります。
-        <a class="button" href="${esc(fallback)}" target="_blank" rel="noopener">
-          TDnet一覧を開く
-        </a>
-        <a class="button secondary" href="./">
-          TDnetレーダーへ戻る
-        </a>
-      </div>`;
-  }
+    content.innerHTML = `<div class="error">保存期限切れや通信エラーの可能性があります。上のボタンから原文・一覧を開けます。
+      <button class="button secondary" id="retry">もう一度読み込む</button>
+      <a class="button secondary" href="./">TDnetレーダーへ戻る</a></div>`;
+    document.getElementById("retry").addEventListener("click", loadDetail);
+  } finally { clearTimeout(timer); }
 }
-
 loadDetail();
 </script>
 </body>
