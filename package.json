@@ -1,0 +1,1 @@
+{"name":"tdnet-radar","version":"3.0.0","private":true,"scripts":{"build":"node scripts/build-worker.mjs","test":"node scripts/build-worker.mjs --check && node --test tests/*.test.cjs tests/*.test.mjs && python3 -m unittest discover -s tests -p 'test_*.py'","test:browser":"node tests/browser.cjs"},"devDependencies":{"playwright":"1.62.1"}}
