@@ -3,8 +3,8 @@
   "short_name": "TDnetレーダー",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#111827",
-  "theme_color": "#111827",
+  "background_color": "#f4f6f3",
+  "theme_color": "#18343e",
   "icons": [
     {
       "src": "icon-192.png",
@@ -16,5 +16,6 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]
+  ],
+  "description": "適時開示を企業規模と比べて、中長期の業績への影響を確認するアプリ"
 }

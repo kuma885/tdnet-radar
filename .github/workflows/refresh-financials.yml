@@ -1,0 +1,41 @@
+name: Refresh free EDINET financial data
+on:
+  schedule:
+    - cron: '15 11 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: tdnet-financial-data
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Collect via official EDINET API and publish dataset
+        env:
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$EDINET_API_KEY" ]; then
+            echo 'EDINET_API_KEY未設定。外部通信・更新は実行しません。'
+            exit 0
+          fi
+          git fetch origin financial-data
+          git worktree add /tmp/tdnet-financial-data origin/financial-data
+          python scripts/collect_edinet.py --output /tmp/tdnet-financial-data/data/financials.json
+          cd /tmp/tdnet-financial-data
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/financials.json data/edinet-state.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'data: refresh official EDINET financial snapshots'
+          gh auth setup-git
+          git push origin HEAD:financial-data
