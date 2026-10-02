@@ -7,7 +7,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const read = p => fs.readFileSync(path.join(root,p),'utf8');
 function worker(file='cloudflare/worker.js', fetchImpl=()=>{throw Error('Unexpected network')}) {
- const context=vm.createContext({URL,URLSearchParams,TextEncoder,Response,crypto:webcrypto,fetch:fetchImpl,console:{log(){},error(){}}});
+ const context=vm.createContext({URL,URLSearchParams,TextEncoder,Response,AbortSignal,crypto:webcrypto,fetch:fetchImpl,console:{log(){},error(){}}});
  vm.runInContext(read(file).replace('export default {','globalThis.worker = {'),context);
  return context;
 }
@@ -46,29 +46,30 @@ const item={time:'15:00',code:'12340',company:'テスト株式会社',title:'業
 function row(i){return `<tr><td class="kjTime">${i.time}</td><td class="kjCode">${i.code}</td><td class="kjName">${i.company}</td><td class="kjTitle"><a href="${i.originalUrl}">${i.title}</a></td></tr>`;}
 function setup({failDetail=false,failPush=false,initial=false}={}) {
  const db=new Map(initial?[]:[['seen:'+date,{ids:[]}]]);const sent=[];
- const env={TDNET_STATE:{async get(k){return db.get(k)||null},async put(k,v){if(failDetail&&k.startsWith('detail:'))throw Error('KV unavailable');db.set(k,JSON.parse(v));}},ONESIGNAL_APP_ID:'test-app',ONESIGNAL_SUBSCRIPTION_ID:'test-device',ONESIGNAL_API_KEY:'test-key'};
+ const env={TDNET_STATE:{async get(k){return db.get(k)||null},async put(k,v){if(failDetail&&k.startsWith('history:'))throw Error('KV unavailable');db.set(k,JSON.parse(v));}},ONESIGNAL_APP_ID:'test-app',ONESIGNAL_SUBSCRIPTION_ID:'test-device',ONESIGNAL_API_KEY:'test-key'};
  const w=worker(undefined,async(url,options)=>{
   if(url.startsWith('https://www.release.tdnet.info/'))return new Response('<table>'+row(item)+'</table>');
+  if(url.includes('raw.githubusercontent.com'))return Response.json({schemaVersion:1,companies:{},status:'not_configured'});
   assert.equal(url,'https://api.onesignal.com/notifications');sent.push(JSON.parse(options.body));
   return Response.json(failPush?{errors:['failure']}:{id:'test-notification'},{status:failPush?503:200});
  });return {w,env,db,sent};
 }
 test('新着→KV→OneSignalの原文URLと説明ボタン、次回重複しない',async()=>{
  const {w,env,db,sent}=setup();await w.worker.scheduled({},env,{});
- assert.equal(sent.length,1);assert.equal(sent[0].url,pdf);assert.deepEqual(sent[0].include_subscription_ids,['test-device']);
- const button=new URL(sent[0].web_buttons[0].url);assert.equal(button.pathname,'/tdnet-radar/detail.html');assert.equal(button.searchParams.get('original'),pdf);
- const detail=db.get('detail:'+button.searchParams.get('id'));assert.equal(detail.explanations.length,2);
+ assert.equal(sent.length,1);assert.equal(sent[0].web_buttons[0].url,pdf);assert.deepEqual(sent[0].include_subscription_ids,['test-device']);
+ const button=new URL(sent[0].url);assert.equal(button.pathname,'/tdnet-radar/detail.html');assert.equal(button.searchParams.get('original'),pdf);
+ const detail=db.get('history:'+date).details.find(d=>d.id===button.searchParams.get('id'));assert.equal(detail.explanations.length,2);
  await w.worker.scheduled({},env,{});assert.equal(sent.length,1);
 });
-test('KVの詳細保存失敗でも原文通知を送る',async()=>{
- const {w,env,sent}=setup({failDetail:true});await w.worker.scheduled({},env,{});assert.equal(sent.length,1);assert.equal(sent[0].url,pdf);
+test('履歴の保存失敗は通知せず次回に再試行できる',async()=>{
+ const {w,env,sent,db}=setup({failDetail:true});await assert.rejects(w.worker.scheduled({},env,{}),/KV unavailable/);assert.equal(sent.length,0);assert.equal(db.has('history:'+date),false);assert.deepEqual(db.get('seen:'+date).ids,[]);
 });
 test('初回全件既読・通知失敗の連打防止はv2と同じ',async()=>{
  const first=setup({initial:true});await first.w.worker.scheduled({},first.env,{});assert.equal(first.sent.length,0);
  const failure=setup({failPush:true});await failure.w.worker.scheduled({},failure.env,{});await failure.w.worker.scheduled({},failure.env,{});assert.equal(failure.sent.length,1);
 });
 test('詳細API：成功・期限切れ・不正ID・CORS・キャッシュ抑止',async()=>{
- const {w,env,db}=setup();await w.worker.scheduled({},env,{});const id=[...db.keys()].find(k=>k.startsWith('detail:')).slice(7);
+ const {w,env,db}=setup();await w.worker.scheduled({},env,{});const id=db.get('history:'+date).details[0].id;
  for(const [suffix,status] of [[id,200],['0'.repeat(24),404],['bad',400]]) {
   const r=await w.worker.fetch(new Request('https://worker.test/api/detail?id='+suffix),env,{});assert.equal(r.status,status);assert.equal(r.headers.get('Cache-Control'),'no-store');assert.equal(r.headers.get('Access-Control-Allow-Origin'),'https://kuma885.github.io');
  }
@@ -100,9 +101,10 @@ test('説明ページはクエリ付きでもオフライン時に共通HTMLへ�
  const empty=serviceWorker({offline:true});assert.equal((await empty.emit('fetch',{request:new Request(empty.base+'detail.html?id=abc')})).status,503);
 });
 function page(fetchImpl,query='?id='+'a'.repeat(24)+'&original='+encodeURIComponent(pdf)) {
- const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',textContent:'',hidden:true,addEventListener(){}});return nodes.get(id)};
- const c=vm.createContext({URL,URLSearchParams,AbortController,setTimeout,clearTimeout,location:{search:query},document:{getElementById:get},fetch:fetchImpl});
- const source=read('detail.html').match(/<script>([\s\S]*)<\/script>/)[1].replace(/loadDetail\(\);\s*$/,'');vm.runInContext(source,c);
+ const nodes=new Map([['original-link',{href:'https://www.release.tdnet.info/inbs/I_main_00.html',hidden:false,addEventListener(){}}]]);const get=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',textContent:'',hidden:true,addEventListener(){}});return nodes.get(id)};
+ const c=vm.createContext({URL,URLSearchParams,AbortSignal,structuredClone,console,setTimeout,clearTimeout,location:{search:query},document:{getElementById:get},window:{addEventListener(){}},navigator:{},localStorage:{getItem(){return null}},fetch:fetchImpl});
+ vm.runInContext(read('lib/analysis.js')+'\n'+read('assets/common.js'),c);
+ c.loadDetail=()=>vm.runInContext(read('assets/detail.js'),c);
  return {c,get};
 }
 test('説明表示：複合材料とHTMLエスケープ、旧v2データ互換',async()=>{
@@ -114,12 +116,12 @@ test('説明表示：複合材料とHTMLエスケープ、旧v2データ互換',
 });
 test('404・通信エラーでも通知に含めた原文URLを維持',async()=>{
  for(const fetcher of [async()=>new Response('',{status:404}),async()=>{throw Error('offline')}]){
-  const {c,get}=page(fetcher);await c.loadDetail();assert.equal(get('original-link').href,pdf);assert.match(get('company').textContent,/取得できません/);
+  const {c,get}=page(fetcher);await c.loadDetail();assert.equal(get('original-link').href,pdf);assert.match(get('detail-status').innerHTML,/取得できません/);
  }
 });
 test('IDなし・危険なoriginal・別IDの応答を安全に処理',async()=>{
  const missing=page(()=>{throw Error('must not fetch')},'?original=javascript:alert(1)');await missing.c.loadDetail();assert.match(missing.get('original-link').href,/I_main_00/);
- const wrong=page(async()=>Response.json({id:'b'.repeat(24)}));await wrong.c.loadDetail();assert.match(wrong.get('company').textContent,/取得できません/);
+ const wrong=page(async()=>Response.json({id:'b'.repeat(24)}));await wrong.c.loadDetail();assert.match(wrong.get('detail-status').innerHTML,/取得できません/);
 });
 
 test('2ページ目の原文リンク欠落は同じ2ページ目へ戻す',async()=>{
