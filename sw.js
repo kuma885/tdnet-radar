@@ -1,5 +1,5 @@
 // OneSignalの実通知は別スコープのOneSignalSDKWorker.jsが処理する。
-const CACHE = "tdnet-radar-v5";
+const CACHE = "tdnet-radar-v6";
 const ASSETS = ["./", "./index.html", "./detail.html", "./analyze.html", "./settings.html", "./about.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./lib/analysis.js", "./assets/app.css", "./assets/common.js", "./assets/index.js", "./assets/detail.js", "./assets/analyze.js", "./assets/settings.js", "./assets/about.js"];
 const BASE = new URL("./", self.location.href);
 const assetUrls = new Set(ASSETS.map(path => new URL(path, BASE).href));

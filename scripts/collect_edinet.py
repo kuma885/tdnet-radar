@@ -29,7 +29,8 @@ def parse_xbrl(raw,document):
    if n=='JPY' and d=='shares':units[u.get('id')]='JPY/share'
  for c in root.findall('x:context',NS):
   entity=c.findtext('x:entity/x:identifier',default='',namespaces=NS)
-  if entity!=document.get('edinetCode'):continue
+  # Official entity identifier is EDINET code + a three-digit instance suffix.
+  if not re.fullmatch(re.escape(document.get('edinetCode') or '!')+r'(?:-\d{3})?',entity):continue
   members=c.findall('.//d:explicitMember',NS)
   if c.findall('.//d:typedMember',NS):continue
   if any((e.text or '').rsplit(':',1)[-1] not in ['NonConsolidatedMember','ConsolidatedMember'] for e in members):continue
@@ -89,7 +90,7 @@ def parse_zip(raw,document):
   seen={}
   for r in records:
    key=(r['periodEnd'],r['scope'])
-   if key in seen and seen[key]!=r:seen[key]=None
+   if key in seen and (seen[key] is None or seen[key]!=r):seen[key]=None
    else:seen[key]=r
   return [r for r in seen.values() if r]
 

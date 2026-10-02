@@ -9,7 +9,9 @@ const RadarUI=(()=>{
  function local(){try{const items=JSON.parse(localStorage.getItem('tdnet-v3-analyses')||'[]');return Array.isArray(items)?items.filter(d=>d&&typeof d.id==='string'&&d.id.startsWith('local-')&&Array.isArray(d.categories)&&typeof d.company==='string').slice(0,300):[];}catch{return [];}}
  function save(items){if(items.length>300)throw Error('保存上限は300件です。バックアップして不要な記録を整理してください。');localStorage.setItem('tdnet-v3-analyses',JSON.stringify(items));}
  async function json(url){const r=await fetch(url,{cache:'no-store',signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('HTTP '+r.status);return r.json();}
- async function financials(){try{return await json(FINANCE);}catch{return {companies:{},status:'unavailable'};}}
+ function withTimeout(promise,ms,message){let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(message)),ms);})]).finally(()=>clearTimeout(timer));}
+ async function financials(){try{const data=await json(FINANCE);if(data.schemaVersion!==1||!data.companies||typeof data.companies!=='object')throw Error('schema');return data;}catch{return {companies:{},status:'unavailable'};}}
+ function financeMessage(data){if(data.status==='not_configured')return '無料業績データは未設定です。EDINET APIキーの設定後に取得を開始します。';if(data.status==='unavailable')return '無料業績データに接続できません。通信状態を確認して再試行してください。';return 'この企業の開示日時以前の決算データはまだありません。'+(data.status==='warming_up'?'初回のデータを順次収集中です。':'');}
  const analysis=d=>d.analysis||A.analyze(d,d.companyFinancials);
  const tags=d=>(d.categories||[]).map(c=>`<span class="tag">${esc(c)}</span>`).join('');
  function card(d){const a=analysis(d),p=a.primary;return `<a class="disclosure" href="detail.html?id=${encodeURIComponent(d.id)}"><div class="company">${esc(d.company)}</div><div class="meta">銘柄コード ${esc(A.code(d.code))}${d.sourceKind==='manual'?' ・ 端末に保存':''}</div><div class="tags">${d.demo?'<span class="tag sample">架空サンプル</span>':''}${tags(d)}</div><div class="impact">業績インパクト<br><strong>${esc(a.impact)}</strong></div><div class="section"><div>${esc(p?.label||'定量分析')}</div><div class="key-number ${p?.value==null?'missing':''}">${esc(p?.text||'データなし')}</div></div><div class="card-footer"><span>${esc(iso(d.date))} ${esc(d.time)}</span><span class="arrow">詳しく見る →</span></div></a>`;}
@@ -27,5 +29,5 @@ const RadarUI=(()=>{
  async function getDetail(id){const own=local().find(d=>d.id===id);if(own)return own;const demo=samples.find(d=>d.id===id);if(demo)return structuredClone(demo);if(!/^[a-f0-9]{24}$/.test(id||''))throw Error('分析IDが不正です');const d=await json(API+'/api/detail?id='+id);if(d.id!==id)throw Error('IDが一致しません');return d;}
  function download(name,data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
- return {API,FINANCE,types,esc,safeUrl,safeTdnet,today,iso,local,save,json,financials,analysis,card,detail,samples,getDetail,download};
+ return {API,FINANCE,types,esc,safeUrl,safeTdnet,today,iso,local,save,json,withTimeout,financials,financeMessage,analysis,card,detail,samples,getDetail,download};
 })();

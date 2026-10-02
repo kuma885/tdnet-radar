@@ -2,6 +2,7 @@
  const U=RadarUI,$=id=>document.getElementById(id);
  $('categories').innerHTML=U.types.map(c=>`<label class="check"><input type="checkbox" data-category="${U.esc(c)}" ${localStorage.getItem('tdnet_'+c)==='false'?'':'checked'}><span>${U.esc(c)}</span></label>`).join('');
  $('categories').addEventListener('change',e=>localStorage.setItem('tdnet_'+e.target.dataset.category,String(e.target.checked)));
+ U.financials().then(data=>{$('finance-status').textContent=data.updatedAt?'登録企業 '+Object.keys(data.companies).length+'社 / 最終更新 '+new Date(data.updatedAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})+(data.status==='warming_up'?'（初回のデータを収集中）':''):U.financeMessage(data);});
  let sdk;
  function ready(){if(sdk)return sdk;sdk=new Promise((resolve,reject)=>{window.OneSignalDeferred=window.OneSignalDeferred||[];window.OneSignalDeferred.push(async OneSignal=>{try{await OneSignal.init({appId:'b7c4e99b-5677-452f-b6f5-f29d5d30d45f',serviceWorkerPath:'tdnet-radar/OneSignalSDKWorker.js',serviceWorkerParam:{scope:'/tdnet-radar/push/'},autoResubscribe:true});resolve(OneSignal);}catch(e){reject(e);}});const s=document.createElement('script');s.src='https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';s.defer=true;s.onerror=()=>reject(Error('SDK'));document.head.appendChild(s);});return sdk;}
  let oneSignal=null;ready().then(o=>oneSignal=o).catch(()=>$('push-status').textContent='通知サービスを読み込めません。通信状態を確認して画面を開き直してください。');

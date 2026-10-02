@@ -276,12 +276,15 @@ export default {
   },
   async scheduled(controller, env, ctx) {
     const result=await readTdnetAll(); // v2 detector, parsing and title rules are unchanged.
-    if(!result.items.length)return;
     const key='history:'+result.date;
     let saved=await env.TDNET_STATE.get(key,'json');
     if(!saved) {
       const legacy=await env.TDNET_STATE.get('seen:'+result.date,'json');
-      saved={ids:legacy?.ids||[],details:[],writes:0,initializing:!legacy};
+      saved={ids:legacy?.ids||[],details:[],writes:0,initializing:!legacy,silentIds:legacy?[]:result.items.map(makeId)};
+      if(!result.items.length){
+        await env.TDNET_STATE.put(key,JSON.stringify({...saved,initializing:false,updatedAt:new Date().toISOString()}),{expirationTtl:90*86400});
+        return;
+      }
     }
     if(saved.writes>=800 || saved.details.length>=750){console.error('FREE_LIMIT: daily history capacity reached');return;}
     const known=new Set(saved.ids), pending=result.items.filter(i=>!known.has(makeId(i)));
@@ -299,10 +302,10 @@ export default {
       const basis=RadarAnalysis.selectFinancials(company,detail);
       if(basis)detail.companyFinancials={code:RadarAnalysis.code(item.code),records:[basis]};
       details.push(detail);known.add(makeId(item));accepted++;
-      if(!saved.initializing)notify.push(detail);
+      if(!(saved.silentIds||[]).includes(makeId(item)))notify.push(detail);
     }
     const remaining=result.items.filter(i=>!known.has(makeId(i))).length;
-    const state={ids:[...known],details,writes:saved.writes+1,initializing:!!saved.initializing&&remaining>0,pending:remaining,updatedAt:new Date().toISOString(),financialStatus:financials.status||'unavailable'};
+    const state={ids:[...known],details,writes:saved.writes+1,initializing:!!saved.initializing&&remaining>0,silentIds:(saved.silentIds||[]).filter(id=>!known.has(id)),pending:remaining,updatedAt:new Date().toISOString(),financialStatus:financials.status||'unavailable'};
     // Persist once per changed poll, before notification. A KV error produces no duplicate push.
     await env.TDNET_STATE.put(key,JSON.stringify(state),{expirationTtl:90*86400});
     for(const detail of notify) {

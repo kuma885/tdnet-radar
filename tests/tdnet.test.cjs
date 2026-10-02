@@ -44,15 +44,15 @@ const date=new Date(Date.now()+9*3600000).toISOString().slice(0,10).replaceAll('
 const pdf='https://www.release.tdnet.info/inbs/140120260909123456.pdf';
 const item={time:'15:00',code:'12340',company:'テスト株式会社',title:'業績予想の上方修正および増配',originalUrl:pdf};
 function row(i){return `<tr><td class="kjTime">${i.time}</td><td class="kjCode">${i.code}</td><td class="kjName">${i.company}</td><td class="kjTitle"><a href="${i.originalUrl}">${i.title}</a></td></tr>`;}
-function setup({failDetail=false,failPush=false,initial=false}={}) {
+function setup({failDetail=false,failPush=false,initial=false,items=[item]}={}) {
  const db=new Map(initial?[]:[['seen:'+date,{ids:[]}]]);const sent=[];
  const env={TDNET_STATE:{async get(k){return db.get(k)||null},async put(k,v){if(failDetail&&k.startsWith('history:'))throw Error('KV unavailable');db.set(k,JSON.parse(v));}},ONESIGNAL_APP_ID:'test-app',ONESIGNAL_SUBSCRIPTION_ID:'test-device',ONESIGNAL_API_KEY:'test-key'};
  const w=worker(undefined,async(url,options)=>{
-  if(url.startsWith('https://www.release.tdnet.info/'))return new Response('<table>'+row(item)+'</table>');
+  if(url.startsWith('https://www.release.tdnet.info/'))return new Response('<table>'+items.map(row).join('')+'</table>');
   if(url.includes('raw.githubusercontent.com'))return Response.json({schemaVersion:1,companies:{},status:'not_configured'});
   assert.equal(url,'https://api.onesignal.com/notifications');sent.push(JSON.parse(options.body));
   return Response.json(failPush?{errors:['failure']}:{id:'test-notification'},{status:failPush?503:200});
- });return {w,env,db,sent};
+ });return {w,env,db,sent,setItems(value){items=value;}};
 }
 test('新着→KV→OneSignalの原文URLと説明ボタン、次回重複しない',async()=>{
  const {w,env,db,sent}=setup();await w.worker.scheduled({},env,{});
@@ -129,4 +129,28 @@ test('2ページ目の原文リンク欠落は同じ2ページ目へ戻す',asyn
  const w=worker(undefined,async()=>{calls++;return new Response(calls===1?row(item).repeat(100):row(item).replace(/<a[^>]*>(.*?)<\/a>/,'$1'));});
  const result=await w.readTdnetAll();assert.equal(result.items.length,101);
  assert.equal(result.items[100].originalUrl,`https://www.release.tdnet.info/inbs/I_list_002_${date}.html`);
+});
+
+test('日付切替後の空巡回を初期化し、当日最初の新着を通知する',async()=>{
+ const {w,env,db,sent,setItems}=setup({initial:true,items:[]});
+ await w.worker.scheduled({},env,{});assert.equal(db.has('history:'+date),true);
+ setItems([item]);await w.worker.scheduled({},env,{});assert.equal(sent.length,1);
+});
+test('初回の既存15件超の読込中でも、後から来た新着は通知する',async()=>{
+ const items=Array.from({length:18},(_,i)=>({...item,code:String(10000+i)}));
+ const {w,env,db,sent,setItems}=setup({initial:true,items});
+ await w.worker.scheduled({},env,{});assert.equal(sent.length,0);assert.equal(db.get('history:'+date).pending,3);
+ setItems([{...item,code:'99990'},...items]);await w.worker.scheduled({},env,{});
+ assert.equal(sent.length,1);assert.equal(db.get('history:'+date).details.length,19);
+ await w.worker.scheduled({},env,{});assert.equal(sent.length,1);
+});
+test('公開APIを開いてもTDnet取得・通知・KV書込を実行しない',async()=>{
+ const w=worker(),env={TDNET_STATE:{async get(){return null;},async put(){throw Error('must not write')}}};
+ for(const path of ['/','/api/status','/api/history?date='+date]){
+  const r=await w.worker.fetch(new Request('https://worker.test'+path),env,{});assert.equal(r.status,200);
+ }
+});
+test('旧v2の保存済み詳細も新APIから読める',async()=>{
+ const {w,env,db}=setup();const id='a'.repeat(24);db.set('detail:'+id,{id,...item,date,categories:['増配']});
+ const r=await w.worker.fetch(new Request('https://worker.test/api/detail?id='+id),env,{});assert.equal(r.status,200);assert.equal((await r.json()).id,id);
 });
