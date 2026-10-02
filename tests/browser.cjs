@@ -26,7 +26,7 @@ async function form(page,base){
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port+'/';
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH}:{}),args:['--no-sandbox','--disable-dev-shm-usage']});
  for(const width of [360,390,412,1440]){
-  const context=await browser.newContext({viewport:{width,height:900},isMobile:width<700,hasTouch:width<700,serviceWorkers:'block'});
+  const context=await browser.newContext({locale:'ja-JP',timezoneId:'Asia/Tokyo',viewport:{width,height:900},isMobile:width<700,hasTouch:width<700,serviceWorkers:'block'});
   const errors=[];const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   let dataset=finance;
   await context.route('https://raw.githubusercontent.com/**',route=>route.fulfill({json:dataset}));
@@ -57,6 +57,30 @@ async function form(page,base){
   assert.deepEqual(errors,[],width+' JavaScript errors');pass(width+'px: no-key manual save and original link on API failure');
   await context.close();
  }
+ const context=await browser.newContext({viewport:{width:390,height:900},locale:'ja-JP',serviceWorkers:'block'});
+ const page=await context.newPage();
+ await context.route('https://raw.githubusercontent.com/**',route=>route.fulfill({json:finance}));
+ await context.route('https://cdn.onesignal.com/**',route=>route.fulfill({contentType:'text/javascript',body:''}));
+ // Simulate a slow older-date response arriving after the newer date.
+ let releaseOld;const oldGate=new Promise(resolve=>releaseOld=resolve);
+ await context.route('https://tdnet-monitor.sanndora388.workers.dev/api/history*',async route=>{
+  const date=new URL(route.request().url()).searchParams.get('date');if(date==='20261001')await oldGate;
+  const d={id:'a'.repeat(24),date,time:'15:00',company:date,code:'1234',title:'受注',categories:['大型受注']};
+  await route.fulfill({json:{items:[d],nextOffset:null}});
+ });
+ await page.goto(base+'index.html');await page.fill('#date','2026-10-01');await page.fill('#date','2026-10-02');await page.waitForFunction(()=>document.getElementById('list').textContent.includes('20261002'));releaseOld();
+ await page.waitForResponse(r=>r.url().includes('date=20261001'));assert.match(await page.textContent('#list'),/20261002/);pass('date switching ignores late history responses');
+ await form(page,base);await page.locator('summary').click();await page.fill('#bodyText','受注額：50億円\n前期売上高：200億円');await page.click('#extract');assert.equal(await page.inputValue('#f-orderAmount'),'5000000000');assert.equal(await page.inputValue('#f-revenue'),'20000000000');pass('text extraction fills only identified numeric candidates');
+ // A minimal PDF generated in memory. No financial document leaves the browser.
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+ const stream='BT /F1 12 Tf 30 250 Td (PDF text 1234) Tj ET';objects.push('<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream');
+ let pdf='%PDF-1.4\n',offsets=[0];for(let i=0;i<objects.length;i++){offsets.push(Buffer.byteLength(pdf));pdf+=(i+1)+' 0 obj\n'+objects[i]+'\nendobj\n';}
+ const xref=Buffer.byteLength(pdf);pdf+='xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+ // Optional local copies of the exact pinned CDN files make this repeatable offline.
+ if(process.env.PDFJS_TEST_DIR)await context.route('https://cdn.jsdelivr.net/npm/pdfjs-dist@5.6.205/build/*',async route=>{const name=new URL(route.request().url()).pathname.split('/').pop();await route.fulfill({contentType:'text/javascript',headers:{'Access-Control-Allow-Origin':'*'},body:await fs.readFile(path.join(process.env.PDFJS_TEST_DIR,name))});});
+ await page.setInputFiles('#pdf',{name:'fixture.pdf',mimeType:'application/pdf',buffer:Buffer.from(pdf)});
+ await page.waitForFunction(()=>document.getElementById('extract-status').textContent.includes('テキストを読み込みました'),{},{timeout:30000});assert.match(await page.inputValue('#bodyText'),/PDF text 1234/);pass('PDF.js loads and extracts a real PDF locally');
+ await context.close();
  await fs.writeFile(path.join(output,'results.json'),JSON.stringify({passed,widths:[360,390,412,1440],browser:browser.version()},null,2));
  console.log(`Browser checks: ${passed} passed; screenshots: ${output}`);
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{await browser?.close();if(server)await new Promise(resolve=>server.close(resolve));});

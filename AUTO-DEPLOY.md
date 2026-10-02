@@ -20,7 +20,7 @@ GitHubの [Actions Secrets](https://github.com/kuma885/tdnet-radar/settings/secr
 
 ## 以降の動き
 
-mainへのpushごとに、26テストが成功してから本番を更新します。PRではテストのみで、Secretや本番Workerにはアクセスしません。
+mainへのpushごとに、分析・EDINETを含む全テストが成功してから本番を更新します。PRではテストのみで、Secretや本番Workerにはアクセスしません。
 HTMLや説明書だけの変更もワークフローは起動しますが、Workerコードが同じなら書き込みは省略します。
 GitHub Pagesの既存公開処理は引き続き独立して動作します。
 
@@ -46,11 +46,11 @@ Cloudflareは既存Workerと既存契約のままです。各サービスの利�
 
 ## テストと復旧
 
-Node.js 24で `node --test tests/tdnet.test.cjs tests/deploy-worker.test.mjs`。
-既存16件と、自動デプロイの模擬APIテスト10件を実行します。
+Node.js 24とPython 3で `npm test`。
+分類・通知・履歴・分析・自動デプロイ・EDINETの46件を実行します。画面検証は `npm ci`、`npx playwright install chromium` のあと `npm run test:browser`。
 内容: 正常更新、設定に書き込まないこと、認証不足、同一コード、省略対象の古いコミット、競合、ロールバック、KV/Cron不足、multipartの読取。
 
-任意の旧版へ戻す場合はGitHubでcloudflare/worker.jsの変更をRevertしてmainへ反映します。自動デプロイが動かない場合は、Cloudflare側の直前の正常なデプロイへ戻せます。
+任意の旧版へ戻す場合はGitHubで対応するlib/analysis.jsとcloudflare/runtime.jsの変更をRevertし、`npm run build`でcloudflare/worker.jsを再生成してmainへ反映します。自動デプロイが動かない場合は、Cloudflare側の直前の正常なデプロイへ戻せます。
 止めたい場合はActions画面でこのワークフローをDisableします。既存の2分監視はそのまま続きます。
 
 ## 公式資料

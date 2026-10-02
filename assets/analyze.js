@@ -7,7 +7,7 @@
  function extraInput(id,label,type='text',placeholder=''){return `<div class="field"><label for="${id}">${label}</label><input id="${id}" name="${id}" type="${type}" placeholder="${placeholder}"></div>`;}
  function check(id,label){return `<label class="check"><input type="checkbox" id="${id}" name="${id}"><span>${label}</span></label>`;}
  function render(facts={}){
- $('numeric-fields').innerHTML=keys().map(k=>`<div class="field"><label for="f-${k}">${U.esc(A.fields[k])}</label><input id="f-${k}" name="${k}" data-numeric="${k}" inputmode="decimal" placeholder="データなし" value="${facts[k]==null?'':U.esc(facts[k])}"></div>`).join('');
+ $('numeric-fields').innerHTML=keys().map(k=>`<div class="field"><label for="f-${k}">${U.esc(A.fields[k])}（${A.percentages.has(k)?"%":A.shares.has(k)?"株":A.perShare.has(k)?"円／株":"円"}）</label><input id="f-${k}" name="${k}" data-numeric="${k}" inputmode="decimal" placeholder="データなし" value="${facts[k]==null?'':U.esc(facts[k])}"></div>`).join('');
  let extras='';if(selected.includes('大型受注'))extras+=extraInput('contractPeriod','契約期間')+extraInput('contractYears','契約年数（明記されている場合）','number')+extraInput('recognitionPeriod','売上計上予定時期');
  if(selected.includes('自社株買い'))extras+=extraInput('marketCapAsOf','時価総額の基準日','date')+extraInput('buybackPeriod','取得期間');if(selected.includes('希薄化'))extras+=extraInput('fundUse','資金用途');
  if(selected.some(c=>['増配','減配','上方修正','下方修正','赤字転落'].includes(c)))extras+=check('perShareComparable','EPS・年間配当の新旧は、株式分割等を調整した同じ株数基準です。');
